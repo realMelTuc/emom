@@ -1,0 +1,117 @@
+<style>
+[hidden]{display:none!important}
+</style>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="page-icon teal">&#8987;</div>
+        <h1 class="page-title">Order History</h1>
+    </div>
+    <div class="page-subtitle">Complete audit trail of all order events and changes</div>
+</div>
+
+<div class="toolbar">
+    <select id="eventTypeFilter" onchange="loadHistory()">
+        <option value="">All Events</option>
+        <option value="price_change">Price Changes</option>
+        <option value="volume_change">Volume Changes</option>
+        <option value="fulfilled">Fulfilled</option>
+        <option value="expired">Expired</option>
+        <option value="cancelled">Cancelled</option>
+        <option value="manual_update">Manual Updates</option>
+        <option value="note">Notes</option>
+    </select>
+    <select id="limitSelect" onchange="loadHistory()">
+        <option value="50">Last 50</option>
+        <option value="100" selected>Last 100</option>
+        <option value="200">Last 200</option>
+        <option value="500">Last 500</option>
+    </select>
+    <button class="btn-sm muted" onclick="loadHistory()">&#8635; Refresh</button>
+</div>
+
+<div class="detail-panel">
+    <div id="historyCount" style="font-size:11px;color:#6b7280;margin-bottom:12px"></div>
+    <div id="historyContent">
+        <div class="empty-state"><div class="empty-icon">&#8987;</div>Loading&hellip;</div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var EVENT_LABELS = {
+        price_change:  'Price Changed',
+        volume_change: 'Volume Updated',
+        fulfilled:     'Fulfilled',
+        expired:       'Expired',
+        cancelled:     'Cancelled',
+        manual_update: 'Manual Update',
+        note:          'Note'
+    };
+
+    var EVENT_COLORS = {
+        price_change:  '#f0a020',
+        volume_change: '#00d4aa',
+        fulfilled:     '#22c55e',
+        expired:       '#6b7280',
+        cancelled:     '#ef4444',
+        manual_update: '#8892a4',
+        note:          '#a855f7'
+    };
+
+    window.loadHistory = function() {
+        var et = document.getElementById('eventTypeFilter').value;
+        var limit = document.getElementById('limitSelect').value;
+        var params = new URLSearchParams();
+        if (et) params.set('event_type', et);
+        params.set('limit', limit);
+
+        fetch('/api/history?' + params.toString())
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('historyCount').textContent = d.count + ' event' + (d.count !== 1 ? 's' : '');
+                if (!d.history || d.history.length === 0) {
+                    document.getElementById('historyContent').innerHTML = '<div class="empty-state"><div class="empty-icon">&#8987;</div>No history events yet</div>';
+                    return;
+                }
+
+                var html = '<table class="data-grid"><thead><tr>'
+                    + '<th>Time</th><th>Event</th><th>Item</th><th>Type</th><th>Change</th><th>Notes</th><th></th>'
+                    + '</tr></thead><tbody>';
+
+                d.history.forEach(function(h) {
+                    var label = EVENT_LABELS[h.event_type] || h.event_type;
+                    var color = EVENT_COLORS[h.event_type] || '#8892a4';
+                    var dt = h.created_at ? h.created_at.substring(0,16).replace('T',' ') : '\u2014';
+                    var isBuy = h.is_buy_order;
+
+                    var changeHtml = '';
+                    if (h.old_value && h.new_value && h.event_type !== 'note') {
+                        changeHtml = '<span style="color:#6b7280">' + h.old_value + '</span>'
+                            + ' <span style="color:#4b5563">&rarr;</span> '
+                            + '<span style="color:#e6e8eb">' + h.new_value + '</span>';
+                    }
+
+                    html += '<tr>'
+                        + '<td class="mono" style="color:#6b7280;font-size:11px;white-space:nowrap">' + dt + '</td>'
+                        + '<td><span style="color:' + color + ';font-size:11px;font-weight:500">' + label + '</span></td>'
+                        + '<td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500">' + (h.type_name || '\u2014') + '</td>'
+                        + '<td>' + (isBuy !== undefined && isBuy !== null ? '<span class="pill ' + (isBuy ? 'buy' : 'sell') + '">' + (isBuy ? 'BUY' : 'SELL') + '</span>' : '\u2014') + '</td>'
+                        + '<td class="mono" style="font-size:11px">' + (changeHtml || '\u2014') + '</td>'
+                        + '<td style="color:#8892a4;font-size:11px;max-width:200px">' + (h.notes || '\u2014') + '</td>'
+                        + '<td>'
+                        + (h.order_id ? '<button class="btn-sm teal" onclick="emomNav(\'/orders/' + h.order_id + '/\')">View</button>' : '')
+                        + '</td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('historyContent').innerHTML = html;
+            })
+            .catch(function(err) {
+                document.getElementById('historyContent').innerHTML = '<div class="alert warning">Failed to load history. Initialize DB tables first.</div>';
+            });
+    };
+
+    loadHistory();
+})();
+</script>

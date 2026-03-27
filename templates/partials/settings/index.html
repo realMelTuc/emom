@@ -1,0 +1,201 @@
+<style>
+[hidden]{display:none!important}
+</style>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="page-icon teal">&#9881;</div>
+        <h1 class="page-title">Settings</h1>
+    </div>
+    <div class="page-subtitle">App configuration, database management, and maintenance</div>
+</div>
+
+<div class="two-col">
+    <div class="main-col">
+
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:14px">Database</div>
+            <div id="dbStats" style="margin-bottom:16px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn teal" onclick="runMigrate()">Initialize / Migrate Tables</button>
+                <button class="btn danger" onclick="confirmPurge()">Purge Expired Orders (&gt;30d)</button>
+            </div>
+            <div id="migrateResult" style="margin-top:12px"></div>
+        </div>
+
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:14px">Bulk Status Update</div>
+            <p style="font-size:12px;color:#8892a4;margin-bottom:14px">Apply a status to all orders matching a filter. Use with care.</p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Current Status (filter)</label>
+                    <select class="dark-select" id="bulkFromStatus">
+                        <option value="expired">Expired</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="active">Active</option>
+                        <option value="paused">Paused</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Set To</label>
+                    <select class="dark-select" id="bulkToStatus">
+                        <option value="fulfilled">Fulfilled</option>
+                        <option value="expired">Expired</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="active">Active</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-top:8px">
+                <button class="btn amber" onclick="runBulkStatusFilter()">Apply Bulk Status</button>
+            </div>
+        </div>
+
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:14px">App Info</div>
+            <div class="kv-row"><div class="kv-key">Application</div><div class="kv-val">EMOM v1.0</div></div>
+            <div class="kv-row"><div class="kv-key">Full Name</div><div class="kv-val">EVE Market Order Manager</div></div>
+            <div class="kv-row"><div class="kv-key">Domain</div><div class="kv-val">emom.meltuc.com</div></div>
+            <div class="kv-row"><div class="kv-key">Stack</div><div class="kv-val">Flask &middot; pg8000 &middot; Supabase</div></div>
+            <div class="kv-row"><div class="kv-key">Tables</div><div class="kv-val">emom_orders, emom_order_history, emom_snapshots</div></div>
+            <div class="kv-row"><div class="kv-key">Health</div><div class="kv-val"><button class="btn-sm teal" onclick="checkHealth()">Check</button> <span id="healthResult"></span></div></div>
+        </div>
+
+    </div>
+    <div class="side-col">
+
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:14px">Order Status Reference</div>
+            <div id="statusRef"></div>
+        </div>
+
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:14px">Quick Links</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <button class="btn muted" style="text-align:left" onclick="emomNav('/dashboard/')">Dashboard</button>
+                <button class="btn muted" style="text-align:left" onclick="emomNav('/orders/')">All Orders</button>
+                <button class="btn muted" style="text-align:left" onclick="emomNav('/analytics/')">Margin Analysis</button>
+                <button class="btn muted" style="text-align:left" onclick="emomNav('/history/')">History</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+(function() {
+    function loadStats() {
+        fetch('/api/settings/stats')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('dbStats').innerHTML =
+                    '<div class="stats-row">'
+                    + '<div class="stat-box teal"><span class="stat-value">' + d.orders + '</span><span class="stat-label">Orders</span></div>'
+                    + '<div class="stat-box"><span class="stat-value">' + d.history + '</span><span class="stat-label">History Events</span></div>'
+                    + '<div class="stat-box"><span class="stat-value">' + d.snapshots + '</span><span class="stat-label">Snapshots</span></div>'
+                    + '</div>';
+            })
+            .catch(function() {
+                document.getElementById('dbStats').innerHTML = '<div class="alert warning">Could not load stats &mdash; tables may need initialization.</div>';
+            });
+    }
+
+    function loadConstants() {
+        fetch('/api/settings/constants')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var html = '';
+                (d.order_statuses || []).forEach(function(s) {
+                    html += '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1e2530">'
+                        + '<span class="pill ' + s + '">' + s + '</span>'
+                        + '<span style="font-size:11px;color:#6b7280">'
+                        + ({active:'Order is live on market',fulfilled:'Fully or partially filled',expired:'Past expiry date',cancelled:'Manually cancelled',paused:'Temporarily suspended'}[s] || '')
+                        + '</span></div>';
+                });
+                document.getElementById('statusRef').innerHTML = html;
+            }).catch(function(){});
+    }
+
+    window.runMigrate = function() {
+        var btn = event.target;
+        btn.disabled = true;
+        btn.textContent = 'Running\u2026';
+        fetch('/api/migrate', {method:'POST'})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                btn.disabled = false;
+                btn.textContent = 'Initialize / Migrate Tables';
+                if (d.ok) {
+                    document.getElementById('migrateResult').innerHTML = '<div class="alert success">&#10003; ' + d.tables + ' tables initialized successfully</div>';
+                    loadStats();
+                    emomToast('DB tables ready', 'success');
+                } else {
+                    document.getElementById('migrateResult').innerHTML = '<div class="alert danger">Error: ' + d.error + '</div>';
+                    emomToast('Migration failed: ' + d.error, 'error');
+                }
+            })
+            .catch(function(err) {
+                btn.disabled = false;
+                btn.textContent = 'Initialize / Migrate Tables';
+                document.getElementById('migrateResult').innerHTML = '<div class="alert danger">Request failed: ' + err.message + '</div>';
+            });
+    };
+
+    window.confirmPurge = function() {
+        if (!confirm('Delete all expired/cancelled orders older than 30 days? This cannot be undone.')) return;
+        fetch('/api/settings/purge-expired', {method:'POST'})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.ok) {
+                    emomToast('Purged ' + d.deleted + ' orders', 'info');
+                    loadStats();
+                } else {
+                    emomToast('Error: ' + d.error, 'error');
+                }
+            });
+    };
+
+    window.runBulkStatusFilter = function() {
+        var fromStatus = document.getElementById('bulkFromStatus').value;
+        var toStatus = document.getElementById('bulkToStatus').value;
+        if (fromStatus === toStatus) { emomToast('From and to status are the same', 'warning'); return; }
+        if (!confirm('Update ALL orders with status "' + fromStatus + '" to "' + toStatus + '"?')) return;
+
+        // First get IDs
+        fetch('/api/orders?status=' + fromStatus + '&sort=created_at&dir=asc')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var ids = (d.orders || []).map(function(o) { return o.id; });
+                if (ids.length === 0) { emomToast('No orders found with status: ' + fromStatus, 'info'); return; }
+                return fetch('/api/settings/bulk-status', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ids: ids, status: toStatus})
+                }).then(function(r) { return r.json(); });
+            })
+            .then(function(d) {
+                if (d && d.ok) {
+                    emomToast(d.updated + ' orders updated to ' + toStatus, 'success');
+                    loadStats();
+                } else if (d) {
+                    emomToast('Error: ' + d.error, 'error');
+                }
+            })
+            .catch(function(err) { emomToast('Request failed', 'error'); });
+    };
+
+    window.checkHealth = function() {
+        fetch('/api/health')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('healthResult').innerHTML = '<span style="color:#22c55e">&#9679; OK &mdash; ' + d.app + '</span>';
+            })
+            .catch(function() {
+                document.getElementById('healthResult').innerHTML = '<span style="color:#ef4444">&#9679; Unreachable</span>';
+            });
+    };
+
+    loadStats();
+    loadConstants();
+})();
+</script>

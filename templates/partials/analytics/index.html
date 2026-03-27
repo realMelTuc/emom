@@ -1,0 +1,253 @@
+<style>
+[hidden]{display:none!important}
+.ana-row { cursor: pointer; }
+</style>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="page-icon purple">&#10888;</div>
+        <h1 class="page-title">Analytics</h1>
+    </div>
+    <div class="page-subtitle">Margin analysis, performance metrics, and order breakdown</div>
+</div>
+
+<div class="tab-bar" id="tabBar">
+    <button class="tab-item active" onclick="switchTab('margins', this)">Margin Analysis</button>
+    <button class="tab-item" onclick="switchTab('performance', this)">Performance</button>
+</div>
+
+<!-- MARGIN ANALYSIS TAB -->
+<div id="tabMargins">
+    <div class="stats-row" id="marginStats">
+        <div class="stat-box green"><span class="stat-value" id="mStatCount">&mdash;</span><span class="stat-label">Orders with Margin Data</span></div>
+        <div class="stat-box teal"><span class="stat-value" id="mStatAvg">&mdash;</span><span class="stat-label">Avg Margin %</span></div>
+        <div class="stat-box amber"><span class="stat-value" id="mStatBest">&mdash;</span><span class="stat-label">Best Margin %</span></div>
+        <div class="stat-box danger"><span class="stat-value" id="mStatWorst">&mdash;</span><span class="stat-label">Worst Margin %</span></div>
+        <div class="stat-box green"><span class="stat-value" id="mStatTotalProfit">&mdash;</span><span class="stat-label">Unrealized Profit</span></div>
+    </div>
+
+    <div class="detail-panel">
+        <div class="section-header">
+            <div class="section-title">Sell Orders by Margin</div>
+            <span style="font-size:11px;color:#6b7280">Active + Fulfilled with cost basis</span>
+        </div>
+        <div id="marginsTableWrap">
+            <div class="empty-state"><div class="empty-icon">&#10888;</div>Loading&hellip;</div>
+        </div>
+    </div>
+</div>
+
+<!-- PERFORMANCE TAB -->
+<div id="tabPerformance" hidden>
+
+    <div class="two-col">
+        <div class="main-col">
+            <div class="detail-panel">
+                <div class="section-title" style="margin-bottom:14px">Top Items by Active Value</div>
+                <div id="perfByItem">
+                    <div class="empty-state"><div class="empty-icon">&#10888;</div>Loading&hellip;</div>
+                </div>
+            </div>
+            <div class="detail-panel">
+                <div class="section-title" style="margin-bottom:14px">By Region</div>
+                <div id="perfByRegion">
+                    <div class="empty-state"><div class="empty-icon">&#10888;</div>Loading&hellip;</div>
+                </div>
+            </div>
+        </div>
+        <div class="side-col">
+            <div class="detail-panel">
+                <div class="section-title" style="margin-bottom:14px">By Character</div>
+                <div id="perfByChar"></div>
+            </div>
+            <div class="detail-panel">
+                <div class="section-title" style="margin-bottom:14px">Overall Fill Rate</div>
+                <div id="perfOverall"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function() {
+    function fmtISK(n) {
+        if (n === null || n === undefined || isNaN(n)) return '\u2014';
+        var abs = Math.abs(n);
+        var sign = n < 0 ? '-' : '';
+        if (abs >= 1e12) return sign + (abs/1e12).toFixed(2) + 'T';
+        if (abs >= 1e9)  return sign + (abs/1e9).toFixed(2) + 'B';
+        if (abs >= 1e6)  return sign + (abs/1e6).toFixed(2) + 'M';
+        if (abs >= 1e3)  return sign + (abs/1e3).toFixed(1) + 'K';
+        return sign + abs.toFixed(0);
+    }
+
+    function marginColor(pct) {
+        if (pct === null || pct === undefined) return '#4b5563';
+        if (pct >= 30) return '#22c55e';
+        if (pct >= 15) return '#00d4aa';
+        if (pct >= 5)  return '#f0a020';
+        if (pct >= 0)  return '#f59e0b';
+        return '#ef4444';
+    }
+
+    window.switchTab = function(tab, btn) {
+        document.querySelectorAll('.tab-item').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        document.getElementById('tabMargins').hidden = (tab !== 'margins');
+        document.getElementById('tabPerformance').hidden = (tab !== 'performance');
+        if (tab === 'performance') loadPerformance();
+    };
+
+    function loadMargins() {
+        fetch('/api/analytics/margins')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var rows = d.margins || [];
+                if (rows.length === 0) {
+                    document.getElementById('marginsTableWrap').innerHTML = '<div class="empty-state"><div class="empty-icon">&#10888;</div>No sell orders with cost basis data.<br><small style="margin-top:8px;display:block">Add cost_basis when creating sell orders to see margin analysis.</small></div>';
+                    ['mStatCount','mStatAvg','mStatBest','mStatWorst','mStatTotalProfit'].forEach(function(id) {
+                        document.getElementById(id).textContent = '0';
+                    });
+                    return;
+                }
+
+                var margins = rows.filter(function(r) { return r.margin_pct !== null; });
+                var sum = margins.reduce(function(a, r) { return a + r.margin_pct; }, 0);
+                var avg = margins.length ? sum / margins.length : 0;
+                var best = margins.reduce(function(a, r) { return Math.max(a, r.margin_pct); }, -Infinity);
+                var worst = margins.reduce(function(a, r) { return Math.min(a, r.margin_pct); }, Infinity);
+                var totalProfit = rows.reduce(function(a, r) { return a + (r.unrealized_profit || 0); }, 0);
+
+                document.getElementById('mStatCount').textContent = rows.length;
+                document.getElementById('mStatAvg').textContent = avg.toFixed(1) + '%';
+                document.getElementById('mStatBest').textContent = best === -Infinity ? '\u2014' : best.toFixed(1) + '%';
+                document.getElementById('mStatWorst').textContent = worst === Infinity ? '\u2014' : worst.toFixed(1) + '%';
+                document.getElementById('mStatTotalProfit').textContent = fmtISK(totalProfit);
+
+                var html = '<table class="data-grid"><thead><tr>'
+                    + '<th>Item</th><th>Region</th><th>Char</th>'
+                    + '<th class="r">Sell Price</th><th class="r">Cost Basis</th>'
+                    + '<th class="r">Margin %</th><th class="r">Profit/Unit</th>'
+                    + '<th class="r">Vol Remain</th><th class="r">Unrealized</th>'
+                    + '<th>Status</th><th></th>'
+                    + '</tr></thead><tbody>';
+
+                rows.forEach(function(r) {
+                    var mPct = r.margin_pct;
+                    var col = marginColor(mPct);
+                    var profitPerUnit = r.price - r.cost_basis;
+
+                    html += '<tr class="ana-row">'
+                        + '<td style="font-weight:500;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + r.type_name + '</td>'
+                        + '<td style="color:#8892a4;font-size:11px">' + (r.region_name || '\u2014') + '</td>'
+                        + '<td style="color:#6b7280;font-size:11px">' + (r.character_name || '\u2014') + '</td>'
+                        + '<td class="mono r">' + fmtISK(r.price) + '</td>'
+                        + '<td class="mono r" style="color:#6b7280">' + fmtISK(r.cost_basis) + '</td>'
+                        + '<td class="mono r"><span style="color:' + col + ';font-weight:500">' + (mPct !== null ? mPct.toFixed(1) + '%' : '\u2014') + '</span></td>'
+                        + '<td class="mono r" style="color:' + col + '">' + (profitPerUnit !== null ? fmtISK(profitPerUnit) : '\u2014') + '</td>'
+                        + '<td class="mono r">' + (r.volume_remain || 0).toLocaleString() + '</td>'
+                        + '<td class="mono r" style="color:' + col + '">' + fmtISK(r.unrealized_profit) + '</td>'
+                        + '<td><span class="pill ' + r.status + '">' + r.status + '</span></td>'
+                        + '<td><button class="btn-sm teal" onclick="emomNav(\'/orders/' + r.id + '/\')">View</button></td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('marginsTableWrap').innerHTML = html;
+            })
+            .catch(function() {
+                document.getElementById('marginsTableWrap').innerHTML = '<div class="alert warning">Failed to load analytics. Initialize DB tables first.</div>';
+            });
+    }
+
+    function loadPerformance() {
+        fetch('/api/analytics/performance')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+
+                // By item
+                var itemHtml = '';
+                if (!d.by_item || d.by_item.length === 0) {
+                    itemHtml = '<div class="empty-state" style="padding:16px 0">No data</div>';
+                } else {
+                    itemHtml = '<table class="data-grid"><thead><tr><th>Item</th><th class="r">Orders</th><th class="r">Active Vol</th><th class="r">Active Value</th><th class="r">Avg Margin</th></tr></thead><tbody>';
+                    d.by_item.forEach(function(r) {
+                        var mCol = r.avg_margin_pct !== null ? marginColor(r.avg_margin_pct) : '#4b5563';
+                        itemHtml += '<tr><td style="font-weight:500">' + r.type_name + '</td>'
+                            + '<td class="mono r">' + r.order_count + '</td>'
+                            + '<td class="mono r">' + (r.active_volume || 0).toLocaleString() + '</td>'
+                            + '<td class="mono r">' + fmtISK(r.active_value) + '</td>'
+                            + '<td class="mono r" style="color:' + mCol + '">' + (r.avg_margin_pct !== null ? r.avg_margin_pct.toFixed(1) + '%' : '\u2014') + '</td>'
+                            + '</tr>';
+                    });
+                    itemHtml += '</tbody></table>';
+                }
+                document.getElementById('perfByItem').innerHTML = itemHtml;
+
+                // By region
+                var regHtml = '';
+                if (!d.by_region || d.by_region.length === 0) {
+                    regHtml = '<div class="empty-state" style="padding:16px 0">No data</div>';
+                } else {
+                    regHtml = '<table class="data-grid"><thead><tr><th>Region</th><th class="r">Orders</th><th class="r">Active</th><th class="r">Active Value</th><th class="r">Unique Items</th></tr></thead><tbody>';
+                    d.by_region.forEach(function(r) {
+                        regHtml += '<tr><td style="font-weight:500">' + r.region_name + '</td>'
+                            + '<td class="mono r">' + r.total_orders + '</td>'
+                            + '<td class="mono r">' + r.active_orders + '</td>'
+                            + '<td class="mono r">' + fmtISK(r.active_value) + '</td>'
+                            + '<td class="mono r">' + r.unique_items + '</td>'
+                            + '</tr>';
+                    });
+                    regHtml += '</tbody></table>';
+                }
+                document.getElementById('perfByRegion').innerHTML = regHtml;
+
+                // By character
+                var charHtml = '';
+                if (!d.by_character || d.by_character.length === 0) {
+                    charHtml = '<div class="empty-state" style="padding:16px 0">No data</div>';
+                } else {
+                    d.by_character.forEach(function(r) {
+                        charHtml += '<div style="border-bottom:1px solid #1e2530;padding:8px 0">'
+                            + '<div style="font-size:12px;font-weight:500;color:#fff">' + r.character_name + '</div>'
+                            + '<div style="display:flex;gap:12px;margin-top:4px;font-family:\'Geist Mono\',monospace;font-size:11px;color:#8892a4">'
+                            + '<span style="color:#00d4aa">' + r.active_orders + ' active</span>'
+                            + '<span>' + r.fulfilled_orders + ' done</span>'
+                            + '<span style="color:#6b7280">' + r.expired_orders + ' exp</span>'
+                            + '</div>'
+                            + '<div style="font-size:12px;color:#f0a020;font-family:\'Geist Mono\',monospace;margin-top:2px">' + fmtISK(r.active_sell_value) + '</div>'
+                            + '</div>';
+                    });
+                }
+                document.getElementById('perfByChar').innerHTML = charHtml || '<div class="empty-state" style="padding:16px 0">No data</div>';
+
+                // Overall
+                var ov = d.overall || {};
+                var fillRate = ov.total_volume > 0 ? (ov.total_filled / ov.total_volume * 100) : 0;
+                var orderFill = ov.total_count > 0 ? (ov.fulfilled_count / ov.total_count * 100) : 0;
+                document.getElementById('perfOverall').innerHTML =
+                    '<div class="kv-row"><div class="kv-key">Total Orders</div><div class="kv-val">' + (ov.total_count || 0) + '</div></div>'
+                    + '<div class="kv-row"><div class="kv-key">Fulfilled</div><div class="kv-val">' + (ov.fulfilled_count || 0) + ' (' + orderFill.toFixed(1) + '%)</div></div>'
+                    + '<div class="kv-row"><div class="kv-key">Vol Filled</div><div class="kv-val">' + ((ov.total_filled || 0)).toLocaleString() + '</div></div>'
+                    + '<div class="kv-row"><div class="kv-key">Fill Rate</div><div class="kv-val" style="color:#00d4aa">' + fillRate.toFixed(1) + '%</div></div>';
+
+            })
+            .catch(function(err) {
+                document.getElementById('perfByItem').innerHTML = '<div class="alert warning">Failed to load performance data.</div>';
+            });
+    }
+
+    // Check URL param to default tab
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'performance') {
+        var tabs = document.querySelectorAll('.tab-item');
+        tabs[0].classList.remove('active');
+        tabs[1].classList.add('active');
+        document.getElementById('tabMargins').hidden = true;
+        document.getElementById('tabPerformance').hidden = false;
+        loadPerformance();
+    } else {
+        loadMargins();
+    }
+})();
+</script>
