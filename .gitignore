@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env.emom
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.db
+.vercel/
+.claude/
+node_modules/
