@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMOM — EVE Market Order Manager</title>
+    <link rel="stylesheet" href="/static/emom.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body { display: flex; height: 100vh; overflow: hidden; }
+        .left-nav { width: 180px; background: #111620; border-right: 1px solid #1e2530; display: flex; flex-direction: column; flex-shrink: 0; height: 100vh; overflow-y: auto; }
+        .nav-brand { padding: 16px 14px 12px; border-bottom: 1px solid #1e2530; cursor: pointer; }
+        .nav-brand-line1 { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 600; color: #00d4aa; letter-spacing: 2px; }
+        .nav-brand-line2 { font-size: 9px; color: #4b5563; font-family: 'Geist Mono', monospace; letter-spacing: 0.5px; margin-top: 1px; }
+        .nav-section { padding: 6px 0; flex: 1; }
+        .nav-group-label { padding: 8px 14px 3px; font-size: 9px; color: #3a4050; text-transform: uppercase; letter-spacing: 1px; font-family: 'Geist Mono', monospace; }
+        .nav-link { display: block; padding: 7px 14px; color: #8892a4; font-size: 12px; cursor: pointer; text-decoration: none; transition: all 0.15s; border-left: 2px solid transparent; white-space: nowrap; }
+        .nav-link:hover { color: #e6e8eb; background: rgba(255,255,255,0.04); }
+        .nav-link.active { color: #e6e8eb; border-left-color: #00d4aa; background: rgba(0,212,170,0.06); }
+        .nav-sep { height: 1px; background: #1e2530; margin: 6px 0; }
+        .nav-bottom { padding: 8px 0; border-top: 1px solid #1e2530; flex-shrink: 0; }
+        .nav-bottom-link { display: block; padding: 5px 14px; color: #3a4050; font-size: 11px; cursor: pointer; text-decoration: none; transition: color 0.15s; }
+        .nav-bottom-link:hover { color: #6b7280; }
+        .nav-datetime { font-size: 9px; color: #2a3040; font-family: 'Geist Mono', monospace; line-height: 1.6; padding: 6px 14px 2px; }
+        .main-panel { flex: 1; overflow-y: auto; height: 100vh; padding: 24px; min-width: 0; }
+    </style>
+</head>
+<body>
+
+    <nav class="left-nav">
+        <div class="nav-brand" onclick="loadPanel('/dashboard/')">
+            <div class="nav-brand-line1">EMOM</div>
+            <div class="nav-brand-line2">MARKET ORDER MGR</div>
+        </div>
+
+        <div class="nav-section">
+            <div class="nav-group-label">Overview</div>
+            <a class="nav-link" data-url="/dashboard/">Dashboard <span class="nav-alert-dot" id="alertDot" hidden></span></a>
+
+            <div class="nav-group-label" style="margin-top:6px">Orders</div>
+            <a class="nav-link" data-url="/orders/">All Orders</a>
+            <a class="nav-link" data-url="/orders/?type=sell">Sell Orders</a>
+            <a class="nav-link" data-url="/orders/?type=buy">Buy Orders</a>
+            <a class="nav-link" data-url="/orders/?status=active&expiring=1">Expiring Soon</a>
+
+            <div class="nav-group-label" style="margin-top:6px">Analytics</div>
+            <a class="nav-link" data-url="/analytics/">Margin Analysis</a>
+            <a class="nav-link" data-url="/analytics/?view=performance">Performance</a>
+
+            <div class="nav-sep"></div>
+            <a class="nav-link" data-url="/history/">History</a>
+            <a class="nav-link" data-url="/settings/">Settings</a>
+        </div>
+
+        <div class="nav-bottom">
+            <a class="nav-bottom-link" href="/" target="_blank">About EMOM</a>
+            <div class="nav-datetime" id="nav-datetime"></div>
+        </div>
+    </nav>
+
+    <main class="main-panel" id="main-panel">
+        <p style="color:#4b5563;text-align:center;padding:80px;font-size:12px">Loading…</p>
+    </main>
+
+    <script>
+        function loadPanel(url) {
+            document.querySelectorAll('[data-url]').forEach(function(el) {
+                el.classList.remove('active');
+                var elUrl = el.dataset.url;
+                if (elUrl === url || url.startsWith(elUrl.split('?')[0]) && elUrl !== '/orders/') {
+                    el.classList.add('active');
+                }
+                if (elUrl === url) el.classList.add('active');
+            });
+            var panel = document.getElementById('main-panel');
+            panel.innerHTML = '<p style="color:#4b5563;text-align:center;padding:80px;font-size:12px">Loading…</p>';
+            fetch(url)
+                .then(function(r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.text();
+                })
+                .then(function(html) {
+                    var tmp = document.createElement('div');
+                    tmp.innerHTML = html;
+                    var scripts = [];
+                    tmp.querySelectorAll('script').forEach(function(s) {
+                        scripts.push({ src: s.src, content: s.textContent });
+                        s.remove();
+                    });
+                    panel.innerHTML = tmp.innerHTML;
+                    scripts.forEach(function(si) {
+                        try {
+                            var ns = document.createElement('script');
+                            if (si.src) ns.src = si.src;
+                            else ns.textContent = si.content;
+                            document.body.appendChild(ns);
+                        } catch(e) { console.error('Script inject error:', e); }
+                    });
+                    sessionStorage.setItem('emomPanel', url);
+                    checkAlerts();
+                })
+                .catch(function(err) {
+                    panel.innerHTML = '<p style="color:#ef4444;padding:40px;font-size:12px">Error loading panel: ' + err.message + '</p>';
+                });
+        }
+
+        document.querySelectorAll('[data-url]').forEach(function(el) {
+            el.addEventListener('click', function(e) {
+                e.preventDefault();
+                loadPanel(el.dataset.url);
+            });
+        });
+
+        (function() {
+            var path = window.location.pathname;
+            var search = window.location.search;
+            var saved = sessionStorage.getItem('emomPanel');
+            var url;
+            if (path && path !== '/' && path !== '/app/' && path !== '/app') {
+                url = path + search;
+            } else if (saved) {
+                url = saved;
+            } else {
+                url = '/dashboard/';
+            }
+            loadPanel(url);
+        })();
+
+        function updateDatetime() {
+            var el = document.getElementById('nav-datetime');
+            if (!el) return;
+            var now = new Date();
+            var utc = now.toUTCString();
+            var parts = utc.split(' ');
+            el.innerHTML = parts.slice(0,4).join(' ').replace(',','') + '<br>EVE ' + parts[4];
+        }
+        updateDatetime();
+        setInterval(updateDatetime, 30000);
+
+        function checkAlerts() {
+            fetch('/api/dashboard/summary')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var dot = document.getElementById('alertDot');
+                    if (dot) dot.hidden = !(d.expiring_soon > 0);
+                })
+                .catch(function() {});
+        }
+        checkAlerts();
+        setInterval(checkAlerts, 120000);
+
+        var _toastEl = null;
+        window.emomToast = function(msg, type) {
+            if (!_toastEl) {
+                _toastEl = document.createElement('div');
+                _toastEl.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 20px;border-radius:4px;font-size:12px;max-width:360px;transition:opacity 0.3s;pointer-events:none;font-family:system-ui,sans-serif;';
+                document.body.appendChild(_toastEl);
+            }
+            var c = {
+                success: ['rgba(34,197,94,0.95)', '#fff'],
+                error:   ['rgba(239,68,68,0.95)', '#fff'],
+                info:    ['rgba(0,212,170,0.95)', '#0d1117'],
+                warning: ['rgba(240,160,32,0.95)', '#0d1117']
+            }[type] || ['rgba(0,212,170,0.95)', '#0d1117'];
+            _toastEl.style.background = c[0];
+            _toastEl.style.color = c[1];
+            _toastEl.textContent = msg;
+            _toastEl.style.opacity = '1';
+            clearTimeout(_toastEl._t);
+            _toastEl._t = setTimeout(function() { _toastEl.style.opacity = '0'; }, 3500);
+        };
+
+        window.emomNav = function(url) { loadPanel(url); };
+    </script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<style>
+[hidden]{display:none!important}
+</style>
+
+<div id="orderDetailWrap">
+    <div class="page-header">
+        <div class="page-header-row">
+            <button class="btn-sm muted" onclick="emomNav('/orders/')" style="margin-right:4px">← Orders</button>
+            <h1 class="page-title" id="detailTitle">Loading…</h1>
+        </div>
+        <div class="page-subtitle" id="detailSubtitle"></div>
+    </div>
+    <div id="detailAlerts"></div>
+    <div class="two-col">
+        <div class="main-col">
+            <div class="stats-row" id="orderStats"></div>
+            <div class="detail-panel" id="fillPanel">
+                <div class="section-header"><div class="section-title">Fill Progress</div><span id="fillPct" style="font-family:'Geist Mono',monospace;color:#00d4aa;font-size:14px"></span></div>
+                <div class="fill-bar-track" style="height:10px;border-radius:4px" id="fillTrack"><div class="fill-bar-fill" id="fillFill" style="height:100%;border-radius:4px;width:0%"></div></div>
+                <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;font-family:'Geist Mono',monospace;color:#6b7280">
+                    <span>Filled: <span id="filledVol">—</span></span><span>Remaining: <span id="remainVol">—</span></span><span>Total: <span id="totalVol">—</span></span>
+                </div>
+            </div>
+            <div class="detail-panel">
+                <div class="section-header"><div class="section-title">Price Snapshots</div><button class="btn-sm teal" onclick="takeSnapshot()">Snapshot Now</button></div>
+                <div id="snapshotsContent"><div class="empty-state" style="padding:20px 0"><div class="empty-icon">📊</div>No snapshots yet</div></div>
+            </div>
+            <div class="detail-panel">
+                <div class="section-header"><div class="section-title">Event History</div></div>
+                <div id="historyTimeline"><div class="empty-state" style="padding:20px 0">No history yet</div></div>
+                <div style="margin-top:14px;border-top:1px solid #1e2530;padding-top:14px">
+                    <div class="form-group"><label class="form-label">Add Note</label><div style="display:flex;gap:8px"><input class="dark-input" id="noteInput" placeholder="Enter note…" style="flex:1"><button class="btn-sm teal" onclick="addNote()">Add</button></div></div>
+                </div>
+            </div>
+        </div>
+        <div class="side-col">
+            <div class="detail-panel">
+                <div class="section-header"><div class="section-title">Order Details</div><button class="btn-sm teal" id="editBtn" onclick="openEditModal()">Edit</button></div>
+                <div id="orderKV"></div>
+            </div>
+            <div class="detail-panel" id="marginCard" hidden>
+                <div class="section-title" style="margin-bottom:14px">Margin Analysis</div>
+                <div id="marginContent"></div>
+            </div>
+            <div class="detail-panel">
+                <div class="section-title" style="margin-bottom:12px">Update Status</div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                    <button class="btn-sm teal" onclick="setStatus('active')">Mark Active</button>
+                    <button class="btn-sm teal" onclick="setStatus('fulfilled')">Mark Fulfilled</button>
+                    <button class="btn-sm muted" onclick="setStatus('paused')">Pause</button>
+                    <button class="btn-sm muted" onclick="setStatus('expired')">Mark Expired</button>
+                    <button class="btn-sm danger" onclick="setStatus('cancelled')">Cancel Order</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="editModal" hidden>
+    <div class="modal-overlay" onclick="if(event.target===this)closeEditModal()">
+        <div class="modal-panel">
+            <div class="modal-header"><div class="modal-title">Edit Order</div><button class="modal-close" onclick="closeEditModal()">✕</button></div>
+            <div class="form-group"><label class="form-label">Item Name</label><input class="dark-input" id="eType"></div>
+            <div class="form-row"><div class="form-group"><label class="form-label">Price (ISK)</label><input class="dark-input" id="ePrice" type="number" step="0.01"></div><div class="form-group"><label class="form-label">Cost Basis (ISK)</label><input class="dark-input" id="eCostBasis" type="number" step="0.01"></div></div>
+            <div class="form-row"><div class="form-group"><label class="form-label">Volume Total</label><input class="dark-input" id="eVolTotal" type="number"></div><div class="form-group"><label class="form-label">Volume Remaining</label><input class="dark-input" id="eVolRemain" type="number"></div></div>
+            <div class="form-group"><label class="form-label">Location</label><input class="dark-input" id="eLocation"></div>
+            <div class="form-row"><div class="form-group"><label class="form-label">Region</label><input class="dark-input" id="eRegion"></div><div class="form-group"><label class="form-label">Status</label><select class="dark-select" id="eStatus"><option value="active">Active</option><option value="paused">Paused</option><option value="fulfilled">Fulfilled</option><option value="expired">Expired</option><option value="cancelled">Cancelled</option></select></div></div>
+            <div class="form-group"><label class="form-label">Expiry</label><input class="dark-input" id="eExpiresAt" type="datetime-local"></div>
+            <div class="form-group"><label class="form-label">Notes</label><textarea class="dark-textarea" id="eNotes"></textarea></div>
+            <div class="btn-row"><button class="btn teal" onclick="saveEdit()">Save Changes</button><button class="btn muted" onclick="closeEditModal()">Cancel</button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+    var _orderId = parseInt(pathParts[pathParts.length - 1]) || 0;
+    var _order = null;
+    if (!_orderId) { var nav = document.querySelector('[data-url].active'); if (nav) { var m = nav.dataset.url.match(/\/orders\/(\d+)\//); if (m) _orderId = parseInt(m[1]); } }
+    function fmtISK(n, full) { if (n === null || n === undefined || isNaN(n)) return '—'; if (full) return n.toLocaleString('en', {minimumFractionDigits:2}) + ' ISK'; var abs = Math.abs(n); var sign = n < 0 ? '-' : ''; if (abs >= 1e12) return sign + (abs/1e12).toFixed(2) + 'T ISK'; if (abs >= 1e9) return sign + (abs/1e9).toFixed(2) + 'B ISK'; if (abs >= 1e6) return sign + (abs/1e6).toFixed(2) + 'M ISK'; if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K ISK'; return sign + abs.toFixed(2) + ' ISK'; }
+    function timeTo(iso) { if (!iso) return '—'; var diff = new Date(iso) - new Date(); if (diff < 0) return '<span style="color:#ef4444">Expired</span>'; var h = Math.floor(diff / 3600000); var m = Math.floor((diff % 3600000) / 60000); if (h < 1) return '<span style="color:#ef4444">' + m + 'm remaining</span>'; if (h < 24) return '<span style="color:#f0a020">' + h + 'h ' + m + 'm remaining</span>'; return Math.floor(h/24) + 'd remaining'; }
+    function loadOrder() {
+        if (!_orderId) { document.getElementById('detailTitle').textContent = 'Order Not Found'; return; }
+        fetch('/api/orders/' + _orderId).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(o) { _order = o; renderDetail(o); loadHistory(); }).catch(function(err) { document.getElementById('detailTitle').textContent = 'Error'; document.getElementById('detailAlerts').innerHTML = '<div class="alert danger">Failed to load order: ' + err.message + '</div>'; });
+    }
+    function renderDetail(o) {
+        var isBuy = o.is_buy_order;
+        document.getElementById('detailTitle').textContent = o.type_name || 'Order #' + o.id;
+        document.getElementById('detailSubtitle').textContent = (isBuy ? 'Buy Order' : 'Sell Order') + (o.character_name ? ' · ' + o.character_name : '') + (o.location_name ? ' · ' + o.location_name : '');
+        var alerts = ''; if (o.expires_at) { var diff = new Date(o.expires_at) - new Date(); if (diff > 0 && diff < 86400000 * 3) alerts += '<div class="alert warning">⚠ Order expires ' + timeTo(o.expires_at) + '</div>'; } document.getElementById('detailAlerts').innerHTML = alerts;
+        var totalVal = (o.price || 0) * (o.volume_remain || 0);
+        var statsHtml = '<div class="stat-box ' + (isBuy ? 'purple' : 'amber') + '"><span class="stat-value">' + fmtISK(o.price) + '</span><span class="stat-label">' + (isBuy ? 'Buy Price' : 'Sell Price') + '</span></div><div class="stat-box teal"><span class="stat-value">' + fmtISK(totalVal) + '</span><span class="stat-label">Total Value Remain</span></div><div class="stat-box"><span class="stat-value">' + (o.volume_remain || 0).toLocaleString() + '</span><span class="stat-label">Vol Remaining</span></div>';
+        if (!isBuy && o.cost_basis && o.margin_pct !== null) { var mCol = o.margin_pct >= 20 ? 'green' : (o.margin_pct >= 0 ? 'teal' : 'danger'); statsHtml += '<div class="stat-box ' + mCol + '"><span class="stat-value">' + o.margin_pct.toFixed(1) + '%</span><span class="stat-label">Margin</span></div>'; }
+        document.getElementById('orderStats').innerHTML = statsHtml;
+        var pct = o.pct_filled || 0; var fillCls = pct >= 80 ? 'done' : (pct >= 50 ? 'high' : (pct >= 20 ? 'mid' : 'low')); document.getElementById('fillFill').className = 'fill-bar-fill ' + fillCls; document.getElementById('fillFill').style.width = Math.min(pct, 100) + '%'; document.getElementById('fillPct').textContent = pct.toFixed(1) + '%'; var filled = (o.volume_total || 0) - (o.volume_remain || 0); document.getElementById('filledVol').textContent = filled.toLocaleString(); document.getElementById('remainVol').textContent = (o.volume_remain || 0).toLocaleString(); document.getElementById('totalVol').textContent = (o.volume_total || 0).toLocaleString();
+        var kv = '<div class="kv-row"><div class="kv-key">Status</div><div class="kv-val"><span class="pill ' + o.status + '">' + o.status + '</span></div></div><div class="kv-row"><div class="kv-key">Order Type</div><div class="kv-val"><span class="pill ' + (isBuy ? 'buy' : 'sell') + '">' + (isBuy ? 'BUY' : 'SELL') + '</span></div></div><div class="kv-row"><div class="kv-key">Price</div><div class="kv-val">' + fmtISK(o.price, true) + '</div></div><div class="kv-row"><div class="kv-key">Cost Basis</div><div class="kv-val">' + (o.cost_basis ? fmtISK(o.cost_basis, true) : '—') + '</div></div><div class="kv-row"><div class="kv-key">Location</div><div class="kv-val" style="font-size:10px">' + (o.location_name || '—') + '</div></div><div class="kv-row"><div class="kv-key">Region</div><div class="kv-val">' + (o.region_name || '—') + '</div></div><div class="kv-row"><div class="kv-key">Character</div><div class="kv-val">' + (o.character_name || '—') + '</div></div><div class="kv-row"><div class="kv-key">Duration</div><div class="kv-val">' + (o.duration || '—') + ' days</div></div><div class="kv-row"><div class="kv-key">EVE Order ID</div><div class="kv-val">' + (o.order_id || '—') + '</div></div><div class="kv-row"><div class="kv-key">Expires</div><div class="kv-val">' + (o.expires_at ? o.expires_at.substring(0,16).replace('T',' ') : '—') + '</div></div><div class="kv-row"><div class="kv-key">Created</div><div class="kv-val">' + (o.created_at ? o.created_at.substring(0,10) : '—') + '</div></div><div class="kv-row"><div class="kv-key">Notes</div><div class="kv-val" style="font-size:11px;white-space:pre-wrap">' + (o.notes || '—') + '</div></div>';
+        document.getElementById('orderKV').innerHTML = kv;
+        if (!isBuy && o.cost_basis && o.margin_pct !== null) { var profitPerUnit = o.price - o.cost_basis; var totalProfit = profitPerUnit * (o.volume_remain || 0); var mCol2 = o.margin_pct >= 20 ? '#22c55e' : (o.margin_pct >= 0 ? '#00d4aa' : '#ef4444'); document.getElementById('marginContent').innerHTML = '<div class="kv-row"><div class="kv-key">Sell Price</div><div class="kv-val">' + fmtISK(o.price, true) + '</div></div><div class="kv-row"><div class="kv-key">Cost Basis</div><div class="kv-val">' + fmtISK(o.cost_basis, true) + '</div></div><div class="kv-row"><div class="kv-key">Profit/Unit</div><div class="kv-val" style="color:' + mCol2 + '">' + fmtISK(profitPerUnit, true) + '</div></div><div class="kv-row"><div class="kv-key">Margin %</div><div class="kv-val" style="color:' + mCol2 + ';font-size:18px;font-family:\'Geist Mono\',monospace">' + o.margin_pct.toFixed(2) + '%</div></div><div class="kv-row"><div class="kv-key">Unrealized</div><div class="kv-val" style="color:' + mCol2 + '">' + fmtISK(totalProfit) + '</div></div>'; document.getElementById('marginCard').hidden = false; }
+        var snapHtml = ''; if (o.snapshots && o.snapshots.length > 0) { snapHtml = '<table class="data-grid"><thead><tr><th>Date</th><th class="r">Price</th><th class="r">Vol Remain</th></tr></thead><tbody>'; o.snapshots.forEach(function(s) { snapHtml += '<tr><td class="mono" style="color:#6b7280">' + s.snapshot_date + '</td><td class="mono r">' + fmtISK(s.price) + '</td><td class="mono r">' + (s.volume_remain || 0).toLocaleString() + '</td></tr>'; }); snapHtml += '</tbody></table>'; } else { snapHtml = '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">📊</div>No snapshots yet. Click "Snapshot Now" to record current price/volume.</div>'; }
+        document.getElementById('snapshotsContent').innerHTML = snapHtml;
+    }
+    function loadHistory() { fetch('/api/history/order/' + _orderId).then(function(r) { return r.json(); }).then(function(d) { if (!d.history || d.history.length === 0) { document.getElementById('historyTimeline').innerHTML = '<div class="empty-state" style="padding:16px 0">No history yet</div>'; return; } var html = '<div class="timeline">'; d.history.forEach(function(h) { var label = {price_change:'Price changed',volume_change:'Volume updated',fulfilled:'Order fulfilled',expired:'Order expired',cancelled:'Order cancelled',manual_update:'Manual update',note:'Note added'}[h.event_type] || h.event_type; var change = ''; if (h.old_value && h.new_value && h.event_type !== 'note') change = '<div class="timeline-change">' + h.old_value + ' → ' + h.new_value + '</div>'; var notes = h.notes ? '<div class="timeline-change" style="color:#8892a4">' + h.notes + '</div>' : ''; var dt = h.created_at ? h.created_at.substring(0,16).replace('T',' ') : ''; html += '<div class="timeline-item"><div class="timeline-dot ' + h.event_type + '"></div><div class="timeline-body"><div class="timeline-event">' + label + '</div>' + change + notes + '<div class="timeline-meta">' + dt + ' UTC</div></div></div>'; }); html += '</div>'; document.getElementById('historyTimeline').innerHTML = html; }).catch(function() {}); }
+    window.takeSnapshot = function() { fetch('/api/orders/' + _orderId + '/snapshot', {method:'POST'}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { emomToast('Snapshot recorded', 'success'); loadOrder(); } else emomToast('Error: ' + d.error, 'error'); }); };
+    window.setStatus = function(status) { fetch('/api/orders/' + _orderId, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status: status})}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { emomToast('Status → ' + status, 'success'); loadOrder(); } else emomToast('Error: ' + d.error, 'error'); }); };
+    window.addNote = function() { var note = document.getElementById('noteInput').value.trim(); if (!note) return; fetch('/api/history/note', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({order_id: _orderId, notes: note})}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { document.getElementById('noteInput').value = ''; emomToast('Note added', 'success'); loadHistory(); } else emomToast('Error: ' + d.error, 'error'); }); };
+    window.openEditModal = function() { if (!_order) return; document.getElementById('eType').value = _order.type_name || ''; document.getElementById('ePrice').value = _order.price || ''; document.getElementById('eCostBasis').value = _order.cost_basis || ''; document.getElementById('eVolTotal').value = _order.volume_total || 1; document.getElementById('eVolRemain').value = _order.volume_remain || 1; document.getElementById('eLocation').value = _order.location_name || ''; document.getElementById('eRegion').value = _order.region_name || ''; document.getElementById('eStatus').value = _order.status || 'active'; document.getElementById('eNotes').value = _order.notes || ''; if (_order.expires_at) document.getElementById('eExpiresAt').value = _order.expires_at.substring(0,16); document.getElementById('editModal').hidden = false; };
+    window.closeEditModal = function() { document.getElementById('editModal').hidden = true; };
+    window.saveEdit = function() { var payload = { type_name: document.getElementById('eType').value.trim(), price: parseFloat(document.getElementById('ePrice').value) || 0, cost_basis: parseFloat(document.getElementById('eCostBasis').value) || null, volume_total: parseInt(document.getElementById('eVolTotal').value) || 1, volume_remain: parseInt(document.getElementById('eVolRemain').value) || 1, location_name: document.getElementById('eLocation').value.trim(), region_name: document.getElementById('eRegion').value.trim(), status: document.getElementById('eStatus').value, notes: document.getElementById('eNotes').value.trim(), expires_at: document.getElementById('eExpiresAt').value || null }; fetch('/api/orders/' + _orderId, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { emomToast('Order updated', 'success'); closeEditModal(); loadOrder(); } else emomToast('Error: ' + d.error, 'error'); }); };
+    loadOrder();
+})();
+</script>

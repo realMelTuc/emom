@@ -1,0 +1,195 @@
+<style>
+[hidden]{display:none!important}
+.expiring-row td { font-size: 12px; }
+.clickable { cursor: pointer; }
+</style>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="page-icon teal">◈</div>
+        <h1 class="page-title">Dashboard</h1>
+    </div>
+    <div class="page-subtitle">Active order overview — value, margins, and expiry alerts</div>
+</div>
+
+<div id="alertsBanner"></div>
+
+<div class="stats-row" id="statsRow">
+    <div class="stat-box teal"><span class="stat-value" id="statActive">—</span><span class="stat-label">Active Orders</span></div>
+    <div class="stat-box amber"><span class="stat-value" id="statSellISK">—</span><span class="stat-label">Sell Value (ISK)</span></div>
+    <div class="stat-box purple"><span class="stat-value" id="statBuyISK">—</span><span class="stat-label">Buy Value (ISK)</span></div>
+    <div class="stat-box green"><span class="stat-value" id="statUnrealizedProfit">—</span><span class="stat-label">Unrealized Profit</span></div>
+    <div class="stat-box"><span class="stat-value" id="statAvgMargin">—</span><span class="stat-label">Avg Sell Margin %</span></div>
+    <div class="stat-box danger"><span class="stat-value" id="statExpiring">—</span><span class="stat-label">Expiring &lt; 24h</span></div>
+</div>
+
+<div class="two-col">
+    <div class="main-col">
+        <div class="detail-panel">
+            <div class="section-header">
+                <div class="section-title">Expiring Soon</div>
+                <button class="btn-sm teal" onclick="emomNav('/orders/?expiring=1')">View All</button>
+            </div>
+            <div id="expiringContent">
+                <div class="empty-state"><div class="empty-icon">⏱</div>No orders expiring soon</div>
+            </div>
+        </div>
+        <div class="detail-panel">
+            <div class="section-header">
+                <div class="section-title">Recent Activity</div>
+                <button class="btn-sm muted" onclick="emomNav('/orders/')">All Orders</button>
+            </div>
+            <div id="recentContent">
+                <div class="empty-state"><div class="empty-icon">📋</div>Loading…</div>
+            </div>
+        </div>
+    </div>
+    <div class="side-col">
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:14px">Top Sell Orders</div>
+            <div id="topSellContent"><div class="empty-state" style="padding:16px 0">No active sell orders</div></div>
+        </div>
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:12px">Quick Actions</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <button class="btn muted" style="text-align:left" onclick="openNewOrderModal()">+ Add Order</button>
+                <button class="btn muted" style="text-align:left" onclick="emomNav('/orders/?type=sell')">View Sell Orders</button>
+                <button class="btn muted" style="text-align:left" onclick="emomNav('/orders/?type=buy')">View Buy Orders</button>
+                <button class="btn muted" style="text-align:left" onclick="emomNav('/analytics/')">Margin Analysis</button>
+                <button class="btn muted" style="text-align:left" onclick="runMigrate()">Initialize DB Tables</button>
+            </div>
+        </div>
+        <div class="detail-panel">
+            <div class="section-title" style="margin-bottom:12px">Order Summary</div>
+            <div id="orderSummaryContent"></div>
+        </div>
+    </div>
+</div>
+
+<div id="newOrderModal" hidden>
+    <div class="modal-overlay" onclick="if(event.target===this)closeNewOrderModal()">
+        <div class="modal-panel">
+            <div class="modal-header"><div class="modal-title">Add Order</div><button class="modal-close" onclick="closeNewOrderModal()">✕</button></div>
+            <div class="form-group"><label class="form-label">Item Name *</label><input class="dark-input" id="nType" placeholder="e.g. Tritanium"></div>
+            <div class="form-group"><label class="form-label">Order Type</label><select class="dark-select" id="nOrderType"><option value="false">Sell Order</option><option value="true">Buy Order</option></select></div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Price (ISK) *</label><input class="dark-input" id="nPrice" type="number" step="0.01" placeholder="0.00"></div>
+                <div class="form-group"><label class="form-label">Cost Basis (ISK)</label><input class="dark-input" id="nCostBasis" type="number" step="0.01" placeholder="For margin calc"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Volume Total</label><input class="dark-input" id="nVolTotal" type="number" value="1"></div>
+                <div class="form-group"><label class="form-label">Volume Remaining</label><input class="dark-input" id="nVolRemain" type="number" value="1"></div>
+            </div>
+            <div class="form-group"><label class="form-label">Location</label><input class="dark-input" id="nLocation" placeholder="e.g. Jita IV - Moon 4 - Caldari Navy"></div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Region</label><input class="dark-input" id="nRegion" placeholder="e.g. The Forge"></div>
+                <div class="form-group"><label class="form-label">Character</label><input class="dark-input" id="nCharacter" placeholder="Character name"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Duration (days)</label><select class="dark-select" id="nDuration"><option value="1">1</option><option value="3">3</option><option value="7">7</option><option value="14">14</option><option value="30">30</option><option value="60">60</option><option value="90" selected>90</option></select></div>
+                <div class="form-group"><label class="form-label">Status</label><select class="dark-select" id="nStatus"><option value="active" selected>Active</option><option value="paused">Paused</option><option value="fulfilled">Fulfilled</option><option value="expired">Expired</option><option value="cancelled">Cancelled</option></select></div>
+            </div>
+            <div class="form-group"><label class="form-label">EVE Order ID</label><input class="dark-input" id="nOrderId" type="number" placeholder="Optional"></div>
+            <div class="form-group"><label class="form-label">Notes</label><textarea class="dark-textarea" id="nNotes" placeholder="Optional notes…"></textarea></div>
+            <div class="btn-row"><button class="btn teal" onclick="submitNewOrder()">Save Order</button><button class="btn muted" onclick="closeNewOrderModal()">Cancel</button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    function fmtISK(n) {
+        if (n === null || n === undefined || isNaN(n)) return '—';
+        var abs = Math.abs(n); var sign = n < 0 ? '-' : '';
+        if (abs >= 1e12) return sign + (abs/1e12).toFixed(2) + 'T';
+        if (abs >= 1e9)  return sign + (abs/1e9).toFixed(2) + 'B';
+        if (abs >= 1e6)  return sign + (abs/1e6).toFixed(2) + 'M';
+        if (abs >= 1e3)  return sign + (abs/1e3).toFixed(1) + 'K';
+        return sign + abs.toFixed(0);
+    }
+    function fmtMargin(pct) {
+        if (pct === null || pct === undefined) return '<span style="color:#4b5563">N/A</span>';
+        var col = pct >= 20 ? '#22c55e' : (pct >= 5 ? '#00d4aa' : (pct >= 0 ? '#f0a020' : '#ef4444'));
+        return '<span style="color:' + col + ';font-family:\'Geist Mono\',monospace">' + pct.toFixed(1) + '%</span>';
+    }
+    function fillBar(pct) {
+        var cls = pct >= 80 ? 'done' : (pct >= 50 ? 'high' : (pct >= 20 ? 'mid' : 'low'));
+        return '<div class="fill-bar-wrap"><div class="fill-bar-track"><div class="fill-bar-fill ' + cls + '" style="width:' + Math.min(pct,100) + '%"></div></div><div class="fill-bar-label"><span>' + pct.toFixed(0) + '% filled</span></div></div>';
+    }
+    function timeTo(iso) {
+        if (!iso) return '—';
+        var diff = new Date(iso) - new Date();
+        if (diff < 0) return '<span style="color:#ef4444">Expired</span>';
+        var h = Math.floor(diff / 3600000); var m = Math.floor((diff % 3600000) / 60000);
+        if (h < 1) return '<span style="color:#ef4444">' + m + 'm</span>';
+        if (h < 24) return '<span style="color:#f0a020">' + h + 'h ' + m + 'm</span>';
+        return Math.floor(h/24) + 'd';
+    }
+    function loadDashboard() {
+        fetch('/api/dashboard/summary')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('statActive').textContent = d.active_count;
+                document.getElementById('statSellISK').textContent = fmtISK(d.sell_isk);
+                document.getElementById('statBuyISK').textContent = fmtISK(d.buy_isk);
+                document.getElementById('statUnrealizedProfit').textContent = fmtISK(d.unrealized_profit);
+                document.getElementById('statAvgMargin').textContent = d.avg_margin_pct.toFixed(1) + '%';
+                document.getElementById('statExpiring').textContent = d.expiring_soon;
+                var banners = '';
+                if (d.expiring_soon > 0) banners += '<div class="alert danger">⚠ ' + d.expiring_soon + ' order' + (d.expiring_soon !== 1 ? 's' : '') + ' expiring in less than 24 hours.</div>';
+                document.getElementById('alertsBanner').innerHTML = banners;
+                var expHtml = '';
+                if (!d.expiring || d.expiring.length === 0) {
+                    expHtml = '<div class="empty-state"><div class="empty-icon">✓</div>No orders expiring soon</div>';
+                } else {
+                    expHtml = '<table class="data-grid"><thead><tr><th>Item</th><th>Type</th><th>Price</th><th>Vol Remain</th><th>Expires</th><th></th></tr></thead><tbody>';
+                    d.expiring.forEach(function(o) {
+                        expHtml += '<tr class="clickable" onclick="emomNav(\'/orders/' + o.id + '/\')">' + '<td style="font-weight:500">' + o.type_name + '</td>' + '<td><span class="pill ' + (o.is_buy_order ? 'buy' : 'sell') + '">' + (o.is_buy_order ? 'BUY' : 'SELL') + '</span></td>' + '<td class="mono r">' + fmtISK(o.price) + '</td>' + '<td class="mono r">' + (o.volume_remain || 0).toLocaleString() + '</td>' + '<td>' + timeTo(o.expires_at) + '</td>' + '<td><button class="btn-sm teal" onclick="event.stopPropagation();emomNav(\'/orders/' + o.id + '/\')">View</button></td>' + '</tr>';
+                    });
+                    expHtml += '</tbody></table>';
+                }
+                document.getElementById('expiringContent').innerHTML = expHtml;
+                var recHtml = '';
+                if (!d.recent || d.recent.length === 0) {
+                    recHtml = '<div class="empty-state"><div class="empty-icon">📋</div>No orders yet. <button class="btn-sm teal" onclick="openNewOrderModal()" style="margin-left:8px">Add First Order</button></div>';
+                } else {
+                    recHtml = '<table class="data-grid"><thead><tr><th>Item</th><th>Type</th><th>Status</th><th>Price</th><th>Fill</th><th>Updated</th></tr></thead><tbody>';
+                    d.recent.forEach(function(o) {
+                        var pct = o.volume_total > 0 ? ((o.volume_total - o.volume_remain) / o.volume_total * 100) : 0;
+                        var updDate = o.updated_at ? o.updated_at.substring(0,10) : '—';
+                        recHtml += '<tr class="clickable" onclick="emomNav(\'/orders/' + o.id + '/\')">' + '<td style="font-weight:500">' + o.type_name + '</td>' + '<td><span class="pill ' + (o.is_buy_order ? 'buy' : 'sell') + '">' + (o.is_buy_order ? 'BUY' : 'SELL') + '</span></td>' + '<td><span class="pill ' + o.status + '">' + o.status + '</span></td>' + '<td class="mono r">' + fmtISK(o.price) + '</td>' + '<td>' + fillBar(pct) + '</td>' + '<td class="mono" style="color:#6b7280;font-size:11px">' + updDate + '</td>' + '</tr>';
+                    });
+                    recHtml += '</tbody></table>';
+                }
+                document.getElementById('recentContent').innerHTML = recHtml;
+                var topHtml = '';
+                if (!d.top_sell || d.top_sell.length === 0) {
+                    topHtml = '<div class="empty-state" style="padding:16px 0">No active sell orders</div>';
+                } else {
+                    d.top_sell.forEach(function(o) {
+                        var val = (o.price || 0) * (o.volume_remain || 0);
+                        var marginPct = (o.cost_basis && o.cost_basis > 0) ? ((o.price - o.cost_basis) / o.cost_basis * 100) : null;
+                        topHtml += '<div style="border-bottom:1px solid #1e2530;padding:8px 0;cursor:pointer" onclick="emomNav(\'/orders/' + o.id + '/\')"><div style="font-size:12px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + o.type_name + '</div><div style="font-size:10px;color:#6b7280;margin-top:1px">' + (o.location_name || '—') + '</div><div style="display:flex;justify-content:space-between;margin-top:4px"><span style="font-size:12px;color:#f0a020;font-family:\'Geist Mono\',monospace">' + fmtISK(val) + '</span>' + (marginPct !== null ? fmtMargin(marginPct) : '') + '</div></div>';
+                    });
+                }
+                document.getElementById('topSellContent').innerHTML = topHtml;
+                document.getElementById('orderSummaryContent').innerHTML = '<div class="kv-row"><div class="kv-key">Active Sell</div><div class="kv-val">' + d.active_sell + '</div></div>' + '<div class="kv-row"><div class="kv-key">Active Buy</div><div class="kv-val">' + d.active_buy + '</div></div>' + '<div class="kv-row"><div class="kv-key">Fulfilled</div><div class="kv-val">' + d.fulfilled_count + '</div></div>' + '<div class="kv-row"><div class="kv-key">Expired</div><div class="kv-val">' + d.expired_count + '</div></div>';
+            })
+            .catch(function() { document.getElementById('recentContent').innerHTML = '<div class="alert warning">Could not load data. Click "Initialize DB Tables" in Quick Actions first.</div>'; });
+    }
+    window.runMigrate = function() {
+        fetch('/api/migrate', {method:'POST'}).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.ok) { emomToast('DB tables initialized (' + d.tables + ' tables)', 'success'); loadDashboard(); }
+            else emomToast('Migration error: ' + d.error, 'error');
+        });
+    };
+    window.openNewOrderModal = function() { document.getElementById('newOrderModal').hidden = false; };
+    window.closeNewOrderModal = function() { document.getElementById('newOrderModal').hidden = true; };
+    window.submitNewOrder = function() {
+        var payload = { type_name: document.getElementById('nType').value.trim(), is_buy_order: document.getElementById('nOrderType').value === 'true', price: parseFloat(document.getElementById('nPrice').value) || 0, cost_basis: parseFloat(document.getElementById('nCostBasis').value) || null, volume_total: parseInt(document.getElementById('nVolTotal').value) || 1, volume_remain: parseInt(document.getElementById('nVolRemain').value) || 1, location_name: document.getElementById('nLocation').value.trim(), region_name: document.getElementById('nRegion').value.trim(), character_name: document.getElementById('nCharacter').value.trim(), duration: parseInt(document.getElementById('nDuration').value) || 90, status: document.getElementById('nStatus').value, notes: document.getElementById('nNotes').value.trim(), order_id: parseInt(document.getElementById('nOrderId').value) || null };
+        if (!payload.type_name || !payload.price) { emomToast('Item name and price are required', 'error'); return; }
+        fetch('/api/orders', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { emomToast('Order saved', 'success'); closeNewOrderModal(); loadDashboard(); } else emomToast('Error: ' + d.error, 'error'); }).catch(function() { emomToast('Request failed', 'error'); });
+    };
+    loadDashboard();
+})();
+</script>

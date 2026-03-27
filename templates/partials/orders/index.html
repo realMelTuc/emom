@@ -1,0 +1,106 @@
+<style>
+[hidden]{display:none!important}
+.order-row { cursor: pointer; }
+.sel-checkbox { cursor: pointer; width: 14px; height: 14px; }
+</style>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="page-icon amber">▧</div>
+        <h1 class="page-title">Orders</h1>
+    </div>
+    <div class="page-subtitle">All market orders — filter, search, and manage</div>
+</div>
+
+<div class="toolbar">
+    <input class="search-input" id="searchInput" placeholder="Search item, location, character…" oninput="applyFilters()">
+    <select id="typeFilter" onchange="applyFilters()"><option value="">All Types</option><option value="sell">Sell Orders</option><option value="buy">Buy Orders</option></select>
+    <select id="statusFilter" onchange="applyFilters()"><option value="">All Statuses</option><option value="active">Active</option><option value="fulfilled">Fulfilled</option><option value="expired">Expired</option><option value="cancelled">Cancelled</option><option value="paused">Paused</option></select>
+    <select id="regionFilter" onchange="applyFilters()"><option value="">All Regions</option></select>
+    <select id="sortSelect" onchange="applyFilters()"><option value="updated_at|desc">Updated ↓</option><option value="price|desc">Price ↓</option><option value="price|asc">Price ↑</option><option value="volume_remain|desc">Volume ↓</option><option value="expires_at|asc">Expires ↑</option><option value="type_name|asc">Name A-Z</option></select>
+    <button class="btn teal" onclick="openNewOrderModal()">+ Add Order</button>
+</div>
+
+<div class="section-header">
+    <div id="orderCount" style="font-size:11px;color:#6b7280"></div>
+    <div style="display:flex;gap:8px"><button class="btn-sm muted" id="bulkBtn" hidden onclick="openBulkModal()">Bulk Action</button></div>
+</div>
+
+<div id="ordersTableWrap"><div class="empty-state"><div class="empty-icon">⏳</div>Loading orders…</div></div>
+
+<div id="newOrderModal" hidden>
+    <div class="modal-overlay" onclick="if(event.target===this)closeNewOrderModal()">
+        <div class="modal-panel">
+            <div class="modal-header"><div class="modal-title" id="newOrderTitle">Add Order</div><button class="modal-close" onclick="closeNewOrderModal()">✕</button></div>
+            <input type="hidden" id="editOrderId" value="">
+            <div class="form-group"><label class="form-label">Item Name *</label><input class="dark-input" id="nType" placeholder="e.g. Tritanium"></div>
+            <div class="form-group"><label class="form-label">Order Type</label><select class="dark-select" id="nOrderType"><option value="false">Sell Order</option><option value="true">Buy Order</option></select></div>
+            <div class="form-row"><div class="form-group"><label class="form-label">Price (ISK) *</label><input class="dark-input" id="nPrice" type="number" step="0.01"></div><div class="form-group"><label class="form-label">Cost Basis (ISK)</label><input class="dark-input" id="nCostBasis" type="number" step="0.01"></div></div>
+            <div class="form-row"><div class="form-group"><label class="form-label">Volume Total</label><input class="dark-input" id="nVolTotal" type="number" value="1"></div><div class="form-group"><label class="form-label">Volume Remaining</label><input class="dark-input" id="nVolRemain" type="number" value="1"></div></div>
+            <div class="form-group"><label class="form-label">Location</label><input class="dark-input" id="nLocation"></div>
+            <div class="form-row"><div class="form-group"><label class="form-label">Region</label><input class="dark-input" id="nRegion"></div><div class="form-group"><label class="form-label">Character</label><input class="dark-input" id="nCharacter"></div></div>
+            <div class="form-row"><div class="form-group"><label class="form-label">Duration (days)</label><select class="dark-select" id="nDuration"><option value="1">1</option><option value="3">3</option><option value="7">7</option><option value="14">14</option><option value="30">30</option><option value="60">60</option><option value="90" selected>90</option></select></div><div class="form-group"><label class="form-label">Status</label><select class="dark-select" id="nStatus"><option value="active" selected>Active</option><option value="paused">Paused</option><option value="fulfilled">Fulfilled</option><option value="expired">Expired</option><option value="cancelled">Cancelled</option></select></div></div>
+            <div class="form-group"><label class="form-label">EVE Order ID</label><input class="dark-input" id="nOrderId" type="number"></div>
+            <div class="form-group"><label class="form-label">Expiry Date/Time</label><input class="dark-input" id="nExpiresAt" type="datetime-local"></div>
+            <div class="form-group"><label class="form-label">Notes</label><textarea class="dark-textarea" id="nNotes"></textarea></div>
+            <div class="btn-row"><button class="btn teal" onclick="submitOrder()">Save Order</button><button class="btn danger" id="deleteOrderBtn" hidden onclick="deleteOrder()">Delete</button><button class="btn muted" onclick="closeNewOrderModal()">Cancel</button></div>
+        </div>
+    </div>
+</div>
+
+<div id="bulkModal" hidden>
+    <div class="modal-overlay" onclick="if(event.target===this)closeBulkModal()">
+        <div class="modal-panel" style="width:340px">
+            <div class="modal-header"><div class="modal-title">Bulk Action</div><button class="modal-close" onclick="closeBulkModal()">✕</button></div>
+            <p style="font-size:12px;color:#8892a4;margin-bottom:16px"><span id="bulkCount">0</span> orders selected</p>
+            <div class="form-group"><label class="form-label">Set Status</label><select class="dark-select" id="bulkStatus"><option value="active">Active</option><option value="fulfilled">Fulfilled</option><option value="expired">Expired</option><option value="cancelled">Cancelled</option><option value="paused">Paused</option></select></div>
+            <div class="btn-row"><button class="btn teal" onclick="submitBulkStatus()">Apply</button><button class="btn muted" onclick="closeBulkModal()">Cancel</button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var _orders = []; var _selected = new Set();
+    function fmtISK(n) { if (!n && n !== 0) return '—'; var abs = Math.abs(n); var sign = n < 0 ? '-' : ''; if (abs >= 1e12) return sign + (abs/1e12).toFixed(2) + 'T'; if (abs >= 1e9) return sign + (abs/1e9).toFixed(2) + 'B'; if (abs >= 1e6) return sign + (abs/1e6).toFixed(2) + 'M'; if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K'; return sign + abs.toFixed(0); }
+    function fillBar(pct) { var cls = pct >= 80 ? 'done' : (pct >= 50 ? 'high' : (pct >= 20 ? 'mid' : 'low')); return '<div class="fill-bar-wrap" style="min-width:70px"><div class="fill-bar-track"><div class="fill-bar-fill ' + cls + '" style="width:' + Math.min(pct,100) + '%"></div></div><div class="fill-bar-label"><span>' + pct.toFixed(0) + '%</span></div></div>'; }
+    function timeTo(iso) { if (!iso) return '<span style="color:#4b5563">—</span>'; var diff = new Date(iso) - new Date(); if (diff < 0) return '<span style="color:#ef4444;font-size:10px">Expired</span>'; var h = Math.floor(diff / 3600000); var m = Math.floor((diff % 3600000) / 60000); if (h < 1) return '<span style="color:#ef4444">' + m + 'm</span>'; if (h < 24) return '<span style="color:#f0a020">' + h + 'h ' + m + 'm</span>'; return '<span style="color:#8892a4">' + Math.floor(h/24) + 'd</span>'; }
+    function renderTable(orders) {
+        if (!orders || orders.length === 0) { document.getElementById('ordersTableWrap').innerHTML = '<div class="empty-state"><div class="empty-icon">▧</div>No orders match the current filters</div>'; document.getElementById('orderCount').textContent = '0 orders'; return; }
+        document.getElementById('orderCount').textContent = orders.length + ' order' + (orders.length !== 1 ? 's' : '');
+        var html = '<table class="data-grid"><thead><tr><th style="width:20px"><input type="checkbox" class="sel-checkbox" id="selAll" onchange="toggleSelectAll(this)"></th><th>Item</th><th>Type</th><th class="r">Price</th><th class="r">Vol Remain</th><th>Fill</th><th class="r">Total Value</th><th>Margin</th><th>Status</th><th>Location</th><th>Expires</th><th>Char</th><th></th></tr></thead><tbody>';
+        orders.forEach(function(o) {
+            var isSel = _selected.has(o.id);
+            var marginHtml = '—';
+            if (o.margin_pct !== null && o.margin_pct !== undefined) { var col = o.margin_pct >= 20 ? '#22c55e' : (o.margin_pct >= 5 ? '#00d4aa' : (o.margin_pct >= 0 ? '#f0a020' : '#ef4444')); marginHtml = '<span style="color:' + col + ';font-family:\'Geist Mono\',monospace">' + o.margin_pct.toFixed(1) + '%</span>'; }
+            html += '<tr class="order-row" onclick="handleRowClick(event,' + o.id + ')" data-id="' + o.id + '"><td onclick="event.stopPropagation()"><input type="checkbox" class="sel-checkbox row-checkbox" data-id="' + o.id + '" ' + (isSel ? 'checked' : '') + ' onchange="toggleSelect(this,' + o.id + ')"></td><td style="font-weight:500;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (o.type_name || '—') + '</td><td><span class="pill ' + (o.is_buy_order ? 'buy' : 'sell') + '">' + (o.is_buy_order ? 'BUY' : 'SELL') + '</span></td><td class="mono r">' + fmtISK(o.price) + '</td><td class="mono r">' + (o.volume_remain || 0).toLocaleString() + '</td><td>' + fillBar(o.pct_filled || 0) + '</td><td class="mono r">' + fmtISK(o.total_value) + '</td><td>' + marginHtml + '</td><td><span class="pill ' + o.status + '">' + o.status + '</span></td><td style="color:#8892a4;font-size:11px;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (o.location_name || '—') + '</td><td>' + timeTo(o.expires_at) + '</td><td style="color:#6b7280;font-size:11px">' + (o.character_name || '—') + '</td><td><button class="btn-sm teal" onclick="event.stopPropagation();openEditModal(' + o.id + ')">Edit</button></td></tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('ordersTableWrap').innerHTML = html;
+    }
+    function buildQueryParams() {
+        var s = document.getElementById('sortSelect').value.split('|'); var params = new URLSearchParams();
+        var q = document.getElementById('searchInput').value.trim(); if (q) params.set('q', q);
+        var t = document.getElementById('typeFilter').value; if (t) params.set('type', t);
+        var st = document.getElementById('statusFilter').value; if (st) params.set('status', st);
+        var reg = document.getElementById('regionFilter').value; if (reg) params.set('region', reg);
+        params.set('sort', s[0]); params.set('dir', s[1]); return params.toString();
+    }
+    window.applyFilters = function() { fetch('/api/orders?' + buildQueryParams()).then(function(r) { return r.json(); }).then(function(d) { _orders = d.orders; renderTable(_orders); }).catch(function() { document.getElementById('ordersTableWrap').innerHTML = '<div class="alert warning">Failed to load orders. Initialize DB tables first.</div>'; }); };
+    window.handleRowClick = function(evt, id) { emomNav('/orders/' + id + '/'); };
+    window.toggleSelect = function(el, id) { if (el.checked) _selected.add(id); else _selected.delete(id); document.getElementById('bulkBtn').hidden = _selected.size === 0; };
+    window.toggleSelectAll = function(el) { var boxes = document.querySelectorAll('.row-checkbox'); boxes.forEach(function(b) { b.checked = el.checked; var id = parseInt(b.dataset.id); if (el.checked) _selected.add(id); else _selected.delete(id); }); document.getElementById('bulkBtn').hidden = _selected.size === 0; };
+    function clearModal() { ['nType','nPrice','nCostBasis','nVolTotal','nVolRemain','nLocation','nRegion','nCharacter','nNotes','nOrderId'].forEach(function(id) { document.getElementById(id).value = ''; }); document.getElementById('nVolTotal').value = '1'; document.getElementById('nVolRemain').value = '1'; document.getElementById('nOrderType').value = 'false'; document.getElementById('nDuration').value = '90'; document.getElementById('nStatus').value = 'active'; document.getElementById('nExpiresAt').value = ''; document.getElementById('editOrderId').value = ''; document.getElementById('deleteOrderBtn').hidden = true; document.getElementById('newOrderTitle').textContent = 'Add Order'; }
+    window.openNewOrderModal = function() { clearModal(); document.getElementById('newOrderModal').hidden = false; };
+    window.closeNewOrderModal = function() { document.getElementById('newOrderModal').hidden = true; };
+    window.openEditModal = function(id) { clearModal(); fetch('/api/orders/' + id).then(function(r) { return r.json(); }).then(function(o) { document.getElementById('editOrderId').value = o.id; document.getElementById('newOrderTitle').textContent = 'Edit Order'; document.getElementById('nType').value = o.type_name || ''; document.getElementById('nOrderType').value = o.is_buy_order ? 'true' : 'false'; document.getElementById('nPrice').value = o.price || ''; document.getElementById('nCostBasis').value = o.cost_basis || ''; document.getElementById('nVolTotal').value = o.volume_total || 1; document.getElementById('nVolRemain').value = o.volume_remain || 1; document.getElementById('nLocation').value = o.location_name || ''; document.getElementById('nRegion').value = o.region_name || ''; document.getElementById('nCharacter').value = o.character_name || ''; document.getElementById('nDuration').value = o.duration || 90; document.getElementById('nStatus').value = o.status || 'active'; document.getElementById('nOrderId').value = o.order_id || ''; document.getElementById('nNotes').value = o.notes || ''; if (o.expires_at) document.getElementById('nExpiresAt').value = o.expires_at.substring(0,16); document.getElementById('deleteOrderBtn').hidden = false; document.getElementById('newOrderModal').hidden = false; }).catch(function() { emomToast('Failed to load order', 'error'); }); };
+    window.submitOrder = function() { var editId = document.getElementById('editOrderId').value; var payload = { type_name: document.getElementById('nType').value.trim(), is_buy_order: document.getElementById('nOrderType').value === 'true', price: parseFloat(document.getElementById('nPrice').value) || 0, cost_basis: parseFloat(document.getElementById('nCostBasis').value) || null, volume_total: parseInt(document.getElementById('nVolTotal').value) || 1, volume_remain: parseInt(document.getElementById('nVolRemain').value) || 1, location_name: document.getElementById('nLocation').value.trim(), region_name: document.getElementById('nRegion').value.trim(), character_name: document.getElementById('nCharacter').value.trim(), duration: parseInt(document.getElementById('nDuration').value) || 90, status: document.getElementById('nStatus').value, notes: document.getElementById('nNotes').value.trim(), order_id: parseInt(document.getElementById('nOrderId').value) || null, expires_at: document.getElementById('nExpiresAt').value || null }; if (!payload.type_name || !payload.price) { emomToast('Item name and price are required', 'error'); return; } var method = editId ? 'PATCH' : 'POST'; var url = editId ? '/api/orders/' + editId : '/api/orders'; fetch(url, {method: method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { emomToast(editId ? 'Order updated' : 'Order saved', 'success'); closeNewOrderModal(); applyFilters(); } else emomToast('Error: ' + d.error, 'error'); }).catch(function() { emomToast('Request failed', 'error'); }); };
+    window.deleteOrder = function() { var editId = document.getElementById('editOrderId').value; if (!editId || !confirm('Delete this order? This cannot be undone.')) return; fetch('/api/orders/' + editId, {method:'DELETE'}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { emomToast('Order deleted', 'info'); closeNewOrderModal(); applyFilters(); } else emomToast('Error: ' + d.error, 'error'); }); };
+    window.openBulkModal = function() { document.getElementById('bulkCount').textContent = _selected.size; document.getElementById('bulkModal').hidden = false; };
+    window.closeBulkModal = function() { document.getElementById('bulkModal').hidden = true; };
+    window.submitBulkStatus = function() { var status = document.getElementById('bulkStatus').value; fetch('/api/settings/bulk-status', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids: Array.from(_selected), status: status})}).then(function(r) { return r.json(); }).then(function(d) { if (d.ok) { emomToast(d.updated + ' orders updated', 'success'); _selected.clear(); document.getElementById('bulkBtn').hidden = true; closeBulkModal(); applyFilters(); } else emomToast('Error: ' + d.error, 'error'); }); };
+    fetch('/api/orders/meta/regions').then(function(r) { return r.json(); }).then(function(d) { var sel = document.getElementById('regionFilter'); d.regions.forEach(function(reg) { var opt = document.createElement('option'); opt.value = reg; opt.textContent = reg; sel.appendChild(opt); }); }).catch(function(){});
+    (function() { var params = new URLSearchParams(window.location.search); if (params.get('type') === 'buy') document.getElementById('typeFilter').value = 'buy'; if (params.get('type') === 'sell') document.getElementById('typeFilter').value = 'sell'; if (params.get('status')) document.getElementById('statusFilter').value = params.get('status'); })();
+    applyFilters();
+})();
+</script>
